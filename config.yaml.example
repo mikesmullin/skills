@@ -1,0 +1,26 @@
+# skills config example
+#
+# This file is a template used by the `skills` CLI.
+# On first run, if ~/.config/skills/config.yaml does not exist,
+# the CLI copies this file there automatically.
+#
+# Structure:
+#   - Keep everything under the top-level `skills:` key.
+#   - Each entry maps a command name to a SKILL.md file path.
+#
+# Format:
+#   skills:
+#     <command-name>: /absolute/path/to/SKILL.md
+#
+# Notes:
+#   - Use SPACES for indentation (no tabs).
+#   - Use absolute paths so lookup is predictable from any directory.
+#   - Command names should match what you'll run, e.g. `skills jira`.
+#   - If a path contains spaces, wrap it in quotes.
+#
+# Example with quotes:
+#   my-tool: "/workspace/Some Folder/SKILL.md"
+#
+# Add, remove, or rename entries below as needed.
+
+skills:

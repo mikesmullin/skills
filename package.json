@@ -1,0 +1,9 @@
+{
+  "name": "skills",
+  "version": "0.1.0",
+  "description": "Lookup and print AI skill files by command name",
+  "type": "module",
+  "bin": {
+    "skills": "./src/index.js"
+  }
+}
