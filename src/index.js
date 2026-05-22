@@ -192,11 +192,84 @@ function detectTerminalColumns() {
   return 80;
 }
 
+function soundex(str) {
+  const upper = str.toUpperCase().replace(/[^A-Z]/g, "");
+  if (!upper) return "";
+  const table = { B:1, F:1, P:1, V:1, C:2, G:2, J:2, K:2, Q:2, S:2, X:2, Z:2, D:3, T:3, L:4, M:5, N:5, R:6 };
+  let result = upper[0];
+  let prev = table[upper[0]] ?? 0;
+  for (let i = 1; i < upper.length && result.length < 4; i += 1) {
+    const digit = table[upper[i]] ?? 0;
+    if (digit !== 0 && digit !== prev) {
+      result += digit;
+    }
+    if (upper[i] !== "H" && upper[i] !== "W") {
+      prev = digit;
+    }
+  }
+  return result.padEnd(4, "0");
+}
+
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => Array(n + 1).fill(0).map((__, j) => (j === 0 ? i : 0)));
+  for (let j = 0; j <= n; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+function findSimilarSkills(query, skillNames) {
+  const lower = query.toLowerCase();
+  const suggestions = new Set();
+
+  for (const name of skillNames) {
+    const lname = name.toLowerCase();
+    if (lname.includes(lower) || lower.includes(lname)) {
+      suggestions.add(name);
+    }
+  }
+
+  const threshold = Math.max(1, Math.floor(lower.length / 3));
+  for (const name of skillNames) {
+    if (suggestions.has(name)) continue;
+    if (levenshtein(lower, name.toLowerCase()) <= threshold) {
+      suggestions.add(name);
+    }
+  }
+
+  // Soundex fallback: only runs when the first two strategies find nothing.
+  // Splits hyphenated names into components so "slak" matches "slack-chat" via S420.
+  if (suggestions.size === 0) {
+    const querySoundex = soundex(query);
+    for (const name of skillNames) {
+      if (name.split(/[-_]/).some(part => soundex(part) === querySoundex)) {
+        suggestions.add(name);
+      }
+    }
+  }
+
+  return [...suggestions].sort();
+}
+
 async function printSkillFile(config, skillName) {
   const skillPath = config[skillName];
 
   if (!skillPath || typeof skillPath !== "string") {
-    console.error(`Unknown skill: ${skillName}`);
+    const suggestions = findSimilarSkills(skillName, Object.keys(config));
+    if (suggestions.length > 0) {
+      console.error(`Unknown skill: '${skillName}'. Did you mean: ${suggestions.join(", ")}?`);
+    } else {
+      console.error(`Unknown skill: '${skillName}'`);
+    }
     process.exitCode = 1;
     return;
   }
