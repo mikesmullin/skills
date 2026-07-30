@@ -5,16 +5,21 @@
 # the CLI copies this file there automatically.
 #
 # Structure:
-#   - Keep everything under the top-level `skills:` key.
-#   - Each entry maps a command name to a SKILL.md file path.
+#   - Every YAML file in ~/.config/skills is loaded.
+#   - `skills:` maps a command name to a specific file.
+#   - `paths:` lists glob paths for discoverable skill files.
 #
-# Format:
+# Explicit command format:
 #   skills:
-#     <command-name>: /absolute/path/to/SKILL.md
+#     <command-name>: ~/path/to/SKILL.md
+#
+# Discovery format:
+#   paths:
+#     - ~/path/to/skills/*.md
 #
 # Notes:
 #   - Use SPACES for indentation (no tabs).
-#   - Use absolute paths so lookup is predictable from any directory.
+#   - Paths may start with ~/; it expands to $HOME.
 #   - Command names should match what you'll run, e.g. `skills jira`.
 #   - If a path contains spaces, wrap it in quotes.
 #

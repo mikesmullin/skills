@@ -22,15 +22,28 @@ async function ensureConfigFile() {
 }
 
 async function loadConfig() {
-  const configFilePath = await ensureConfigFile();
-  const rawConfig = await fs.readFile(configFilePath, "utf8");
-  return parseSkillsConfig(rawConfig, configFilePath);
+  await ensureConfigFile();
+  const configEntries = await fs.readdir(CONFIG_DIR, { withFileTypes: true });
+  const configFiles = configEntries
+    .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
+    .map((entry) => path.join(CONFIG_DIR, entry.name))
+    .sort();
+  const config = { skills: {}, paths: [] };
+
+  for (const configFilePath of configFiles) {
+    const rawConfig = await fs.readFile(configFilePath, "utf8");
+    const parsed = parseSkillsConfig(rawConfig, configFilePath);
+    Object.assign(config.skills, parsed.skills);
+    config.paths.push(...parsed.paths);
+  }
+
+  return config;
 }
 
 function parseSkillsConfig(rawConfig, configFilePath) {
-  const skills = {};
+  const config = { skills: {}, paths: [] };
   const lines = rawConfig.split(/\r?\n/);
-  let foundSkillsKey = false;
+  let currentSection = null;
 
   for (let index = 0; index < lines.length; index += 1) {
     const lineNumber = index + 1;
@@ -41,20 +54,29 @@ function parseSkillsConfig(rawConfig, configFilePath) {
       continue;
     }
 
-    if (!foundSkillsKey) {
-      if (trimmed === "skills:") {
-        foundSkillsKey = true;
-        continue;
-      }
-      throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: expected top-level 'skills:' key.`);
-    }
-
     if (line.startsWith("\t")) {
       throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: use spaces for indentation, not tabs.`);
     }
 
     if (!line.startsWith(" ")) {
-      break;
+      if (trimmed === "skills:" || trimmed === "paths:") {
+        currentSection = trimmed.slice(0, -1);
+        continue;
+      }
+      throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: expected top-level 'skills:' or 'paths:' key.`);
+    }
+
+    if (!currentSection) {
+      throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: expected a top-level section before this entry.`);
+    }
+
+    if (currentSection === "paths") {
+      const pathMatch = line.match(/^\s{2,}-\s+(.+?)\s*$/);
+      if (!pathMatch) {
+        throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: expected '  - <glob-path>'.`);
+      }
+      config.paths.push(expandHomeDirectory(unquote(pathMatch[1].trim())));
+      continue;
     }
 
     const entryMatch = line.match(/^\s{2,}([^:#]+):\s*(.*?)\s*$/);
@@ -63,7 +85,7 @@ function parseSkillsConfig(rawConfig, configFilePath) {
     }
 
     const skillName = entryMatch[1].trim();
-    let skillPath = entryMatch[2].trim();
+    const skillPath = expandHomeDirectory(unquote(entryMatch[2].trim()));
 
     if (!skillName) {
       throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: skill name cannot be empty.`);
@@ -73,18 +95,31 @@ function parseSkillsConfig(rawConfig, configFilePath) {
       throw new Error(`Invalid config at ${configFilePath}:${lineNumber}: skill path cannot be empty.`);
     }
 
-    if ((skillPath.startsWith('"') && skillPath.endsWith('"')) || (skillPath.startsWith("'") && skillPath.endsWith("'"))) {
-      skillPath = skillPath.slice(1, -1);
-    }
-
-    skills[skillName] = skillPath;
+    config.skills[skillName] = skillPath;
   }
 
-  if (!foundSkillsKey) {
-    throw new Error(`Invalid config at ${configFilePath}: expected a top-level 'skills:' key.`);
+  if (!currentSection) {
+    throw new Error(`Invalid config at ${configFilePath}: expected a top-level 'skills:' or 'paths:' key.`);
   }
 
-  return skills;
+  return config;
+}
+
+function unquote(value) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function expandHomeDirectory(value) {
+  if (value === "~") {
+    return process.env.HOME ?? os.homedir();
+  }
+  if (value.startsWith("~/")) {
+    return path.join(process.env.HOME ?? os.homedir(), value.slice(2));
+  }
+  return value;
 }
 
 function getHelpText() {
@@ -92,15 +127,16 @@ function getHelpText() {
     "Skills: find AI-compatible tools installed w/ SKILL.md files",
     "",
     "Usage:",
+    "  skills                 List all available skills",
+    "  skills available       List all available skills",
     "  skills <skill>         Print the skill file contents",
-    "  skills available       List available skills",
-    "  skills --help          Show help and list available skills"
+    "  skills --help          Show this help"
   ].join("\n");
 }
 
 function printAvailableSkills(config) {
-  const skills = Object.keys(config).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
-  console.log("AVAILABLE SKILLS:");
+  const skills = Object.keys(config.skills).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+  console.log("AVAILABLE CLI TOOLS:");
   console.log("");
 
   if (skills.length === 0) {
@@ -162,6 +198,59 @@ function printAvailableSkills(config) {
     });
 
     console.log(`${indent}${formattedCells.join("")}`);
+  }
+}
+
+async function getFrontmatterDescription(filePath) {
+  const content = await fs.readFile(filePath, "utf8");
+  if (!content.startsWith("---")) {
+    return null;
+  }
+
+  const end = content.indexOf("\n---", 3);
+  if (end === -1) {
+    return null;
+  }
+
+  const block = content.slice(3, end);
+  const descriptionLine = block.split(/\r?\n/).find((line) => /^description:\s*(.+)$/.test(line));
+  return descriptionLine ? descriptionLine.replace(/^description:\s*/, "").trim() : null;
+}
+
+async function findSkillFiles(config, searchPattern) {
+  const files = new Set();
+
+  for (const pattern of config.paths) {
+    const root = path.parse(pattern).root;
+    const globPattern = root ? path.relative(root, pattern) : pattern;
+    const cwd = root || process.cwd();
+    for await (const file of new Bun.Glob(globPattern).scan({ cwd, onlyFiles: true, dot: true })) {
+      if (!searchPattern || file.toLowerCase().includes(searchPattern.toLowerCase())) {
+        files.add(path.resolve(cwd, file));
+      }
+    }
+  }
+
+  return [...files].sort();
+}
+
+async function printDiscoveredSkillFiles(config, searchPattern, indent = "") {
+  const files = await findSkillFiles(config, searchPattern);
+  for (const file of files) {
+    const description = await getFrontmatterDescription(file);
+    console.log(`${indent}${path.relative(process.cwd(), file)}: ${description ?? "(no description)"}`);
+  }
+  return files.length > 0;
+}
+
+async function printAllAvailableSkills(config) {
+  printAvailableSkills(config);
+  console.log("");
+  console.log("AVAILABLE SKILL FILES:");
+  console.log("");
+  const foundFiles = await printDiscoveredSkillFiles(config, undefined, "    ");
+  if (!foundFiles) {
+    console.log("    (none)");
   }
 }
 
@@ -261,10 +350,20 @@ function findSimilarSkills(query, skillNames) {
 }
 
 async function printSkillFile(config, skillName) {
-  const skillPath = config[skillName];
+  const skillPath = config.skills[skillName];
 
   if (!skillPath || typeof skillPath !== "string") {
-    const suggestions = findSimilarSkills(skillName, Object.keys(config));
+    const matchingFiles = await findSkillFiles(config, skillName);
+    if (matchingFiles.length === 1) {
+      await printSkillFileContents(matchingFiles[0], skillName);
+      return;
+    }
+    if (matchingFiles.length > 1) {
+      await printDiscoveredSkillFiles(config, skillName);
+      return;
+    }
+
+    const suggestions = findSimilarSkills(skillName, Object.keys(config.skills));
     if (suggestions.length > 0) {
       console.error(`Unknown skill: '${skillName}'. Did you mean: ${suggestions.join(", ")}?`);
     } else {
@@ -274,6 +373,10 @@ async function printSkillFile(config, skillName) {
     return;
   }
 
+  await printSkillFileContents(skillPath, skillName);
+}
+
+async function printSkillFileContents(skillPath, skillName) {
   try {
     const content = await fs.readFile(skillPath, "utf8");
     process.stdout.write(content);
@@ -298,16 +401,18 @@ async function main() {
     process.exit(1);
   }
 
-  if (!command || command === "--help") {
+  if (!command) {
+    await printAllAvailableSkills(config);
+    return;
+  }
+
+  if (command === "--help") {
     console.log(getHelpText());
-    console.log("");
-    printAvailableSkills(config);
-    console.log("");
     return;
   }
 
   if (command === "available") {
-    printAvailableSkills(config);
+    await printAllAvailableSkills(config);
     return;
   }
 
