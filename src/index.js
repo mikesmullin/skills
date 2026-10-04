@@ -238,7 +238,7 @@ async function printDiscoveredSkillFiles(config, searchPattern, indent = "") {
   const files = await findSkillFiles(config, searchPattern);
   for (const file of files) {
     const description = await getFrontmatterDescription(file);
-    console.log(`${indent}${path.relative(process.cwd(), file)}: ${description ?? "(no description)"}`);
+    console.log(`${indent}${file}: ${description ?? "(no description)"}`);
   }
   return files.length > 0;
 }
@@ -377,8 +377,10 @@ async function printSkillFile(config, skillName) {
 }
 
 async function printSkillFileContents(skillPath, skillName) {
+  const absPath = path.resolve(skillPath);
   try {
     const content = await fs.readFile(skillPath, "utf8");
+    process.stdout.write(`executing: cat ${absPath}\n\n`);
     process.stdout.write(content);
     if (!content.endsWith("\n")) {
       process.stdout.write("\n");

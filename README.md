@@ -60,6 +60,8 @@ skills <skill>         Print the skill file contents
 skills --help          Show help
 ```
 
+When a skill is printed, a `executing: cat /path/to/SKILL.md` line is emitted, followed by a blank line and then the file contents, so callers know exactly where the skill came from.
+
 ## Examples
 
 ```bash

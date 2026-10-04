@@ -28,7 +28,7 @@ It then appends every file discovered through configured path globs, including g
 skills <skill-name>
 ```
 
-Prints the contents of that skill's SKILL.md file.
+An `executing: cat <absolute path>` line is printed first, then a blank line, then the file contents. This lets the caller locate the skill without running a separate `find`.
 
 When the name is not explicitly registered, it searches every configured skill-file path. One match prints that file's contents; multiple matches are listed with their frontmatter descriptions.
 
