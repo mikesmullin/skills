@@ -127,10 +127,14 @@ function getHelpText() {
     "Skills: find AI-compatible tools installed w/ SKILL.md files",
     "",
     "Usage:",
-    "  skills                 List all available skills",
-    "  skills available       List all available skills",
-    "  skills <skill>         Print the skill file contents",
-    "  skills --help          Show this help"
+    "  skills                            List all available skills & skill files",
+    "  skills available                  List all available skills & skill files",
+    "  skills <skill-name>               Read and print the skill file for <skill-name>",
+    "  skills --help                     Show this help",
+    "",
+    "Examples:",
+    "  skills web-researcher             Read the web-researcher skill file",
+    "  skills grep                       Read the grep skill file"
   ].join("\n");
 }
 
@@ -244,6 +248,8 @@ async function printDiscoveredSkillFiles(config, searchPattern, indent = "") {
 }
 
 async function printAllAvailableSkills(config) {
+  console.log("Tip: use \`skills <skill-name>\` (e.g. \`skills jira\`) to read a skill file.");
+  console.log("");
   printAvailableSkills(config);
   console.log("");
   console.log("AVAILABLE SKILL FILES:");
